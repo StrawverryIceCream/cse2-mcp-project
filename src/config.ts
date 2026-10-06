@@ -11,6 +11,8 @@ const envSchema = z.object({
   WORKSPACE_ROOT: z.string().min(1, "WORKSPACE_ROOT is required"),
   AUTH_TOKEN: z.string().min(1, "AUTH_TOKEN is required"),
   ANTHROPIC_API_KEY: z.string().optional(),
+  NGROK_AUTHTOKEN: z.string().optional(),
+  NGROK_DOMAIN: z.string().optional()
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

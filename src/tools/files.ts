@@ -19,7 +19,7 @@ export const listFilesTool = {
     const safePath = resolveSafe(parsed.dirPath);
     
     try {
-      const files = await listDirectoryFiles(safePath);
+      const files = await listDirectoryFiles(await safePath);
       return { content: [{ type: 'text', text: files.join('\n') }] };
     } catch (error: any) {
       return { content: [{ type: 'text', text: `Error: ${error.message}` }], isError: true };
