@@ -1,28 +1,12 @@
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { listFilesTool } from './tools/files.js'; // Example tool import
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerFileTools } from "./tools/files.tool.js";
+import { registerGitTools } from "./tools/git.tool.js";
+import { registerSearchTools } from "./tools/search.tool.js";
 
-export function createServer(): Server {
-  const server = new Server(
-    { name: 'mcp-file-server', version: '1.0.0' },
-    { capabilities: { tools: {} } }
-  );
-
-  // Register tool schemas
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [listFilesTool.schema]
-  }));
-
-  // Route tool execution
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    switch (request.params.name) {
-      case 'list_files':
-        return listFilesTool.execute(request.params.arguments);
-      // Add other tools here (read_file, write_file, search_code, etc.)
-      default:
-        throw new Error(`Tool not found: ${request.params.name}`);
-    }
-  });
-
+export function createServer(): McpServer {
+  const server = new McpServer({ name: "mcp-file-server", version: "1.0.0" });
+  registerFileTools(server);
+  registerSearchTools(server);
+  registerGitTools(server);
   return server;
 }

@@ -1,30 +1,23 @@
+export type ToolErrorCode =
+  | "INVALID_INPUT"
+  | "NOT_FOUND"
+  | "NOT_A_FILE"
+  | "NOT_A_DIRECTORY"
+  | "OUTSIDE_WORKSPACE"
+  | "BLOCKED_PATH"
+  | "TOO_LARGE"
+  | "BINARY_FILE"
+  | "STALE_VERSION"
+  | "AMBIGUOUS_MATCH"
+  | "PROTECTED_FILE"
+  | "GIT_FAILED";
+
 export class ToolError extends Error {
   constructor(
+    readonly code: ToolErrorCode,
     message: string,
-    public readonly code: string = "TOOL_ERROR",
   ) {
     super(message);
     this.name = "ToolError";
-  }
-}
-
-export class SandboxError extends ToolError {
-  constructor(message: string) {
-    super(message, "SANDBOX_VIOLATION");
-    this.name = "SandboxError";
-  }
-}
-
-export class VersionConflictError extends ToolError {
-  constructor(message: string) {
-    super(message, "VERSION_CONFLICT");
-    this.name = "VersionConflictError";
-  }
-}
-
-export class SizeLimitError extends ToolError {
-  constructor(message: string) {
-    super(message, "SIZE_LIMIT_EXCEEDED");
-    this.name = "SizeLimitError";
   }
 }
