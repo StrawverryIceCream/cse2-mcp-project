@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { Stats } from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -105,4 +105,122 @@ export async function readTextFile(rel: string): Promise<FileContent> {
     version: versionOf(buffer),
     bytes: buffer.length,
   };
+}
+
+// ---------------------------------------------------------------------------
+// write_file / str_replace / delete_file
+// ---------------------------------------------------------------------------
+
+/** Write to a temp file in the same directory, then rename — atomic on same filesystem. */
+async function atomicWrite(abs: string, content: string): Promise<void> {
+  const dir = path.dirname(abs);
+  const tmp = path.join(
+    dir,
+    `.${path.basename(abs)}.${randomBytes(6).toString("hex")}.tmp`,
+  );
+  await fsp.mkdir(dir, { recursive: true });
+  await fsp.writeFile(tmp, content, "utf-8");
+  await fsp.rename(tmp, abs);
+}
+
+function assertWithinSizeCap(bytes: number, rel: string): void {
+  if (bytes > env.MAX_FILE_BYTES) {
+    throw new ToolError(
+      "TOO_LARGE",
+      `Writing "${rel}" would be ${bytes} bytes; the limit is ${env.MAX_FILE_BYTES}.`,
+    );
+  }
+}
+
+/** null means the file doesn't exist yet — distinct from "version doesn't match". */
+async function currentVersionOrNull(abs: string): Promise<string | null> {
+  try {
+    const buffer = await fsp.readFile(abs);
+    return versionOf(buffer);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+}
+
+export interface WriteResult {
+  version: string;
+  bytes: number;
+}
+
+export async function writeTextFile(
+  rel: string,
+  content: string,
+  ifVersion?: string,
+): Promise<WriteResult> {
+  const bytes = Buffer.byteLength(content, "utf-8");
+  assertWithinSizeCap(bytes, rel);
+
+  const abs = await resolveSafe(rel);
+
+  if (ifVersion !== undefined) {
+    const current = await currentVersionOrNull(abs);
+    if (current !== ifVersion) {
+      throw new ToolError(
+        "STALE_VERSION",
+        `"${rel}" is at version ${current ?? "(new file)"}, not ${ifVersion}.`,
+      );
+    }
+  }
+
+  await atomicWrite(abs, content);
+  return { version: versionOf(content), bytes };
+}
+
+export interface StrReplaceResult {
+  version: string;
+  bytes: number;
+}
+
+export async function strReplace(
+  rel: string,
+  oldStr: string,
+  newStr: string,
+  ifVersion?: string,
+): Promise<StrReplaceResult> {
+  // Reuses readTextFile's own NOT_FOUND / NOT_A_FILE / TOO_LARGE / BINARY_FILE
+  // checks rather than re-deriving them.
+  const { content, version } = await readTextFile(rel);
+
+  if (ifVersion !== undefined && version !== ifVersion) {
+    throw new ToolError(
+      "STALE_VERSION",
+      `"${rel}" is at version ${version}, not ${ifVersion}.`,
+    );
+  }
+
+  const occurrences = content.split(oldStr).length - 1;
+  if (occurrences !== 1) {
+    throw new ToolError(
+      "AMBIGUOUS_MATCH",
+      occurrences === 0
+        ? `old_str was not found in "${rel}".`
+        : `old_str occurs ${occurrences} times in "${rel}"; it must occur exactly once.`,
+    );
+  }
+
+  const updated = content.replace(oldStr, newStr);
+  const bytes = Buffer.byteLength(updated, "utf-8");
+  assertWithinSizeCap(bytes, rel);
+
+  const abs = await resolveSafe(rel);
+  await atomicWrite(abs, updated);
+  return { version: versionOf(updated), bytes };
+}
+
+export async function deleteFile(rel: string): Promise<void> {
+  const abs = await resolveSafe(rel);
+  const stat = await statOrThrow(abs, rel);
+  if (!stat.isFile()) {
+    throw new ToolError(
+      "NOT_A_FILE",
+      `"${rel}" is a directory; delete_file only removes files.`,
+    );
+  }
+  await fsp.unlink(abs);
 }

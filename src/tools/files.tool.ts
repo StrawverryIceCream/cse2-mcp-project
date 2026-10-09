@@ -1,6 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { listDirectory, readTextFile } from "../services/files.service.js";
+import {
+  deleteFile,
+  listDirectory,
+  readTextFile,
+  strReplace,
+  writeTextFile,
+} from "../services/files.service.js";
 import { run } from "./result.tool.js";
 
 export function registerFileTools(server: McpServer): void {
@@ -50,6 +56,112 @@ export function registerFileTools(server: McpServer): void {
       run(async () => {
         const { content, version, bytes } = await readTextFile(path);
         return `[version: ${version}, ${bytes} bytes]\n\n${content}`;
+      }),
+  );
+
+  server.registerTool(
+    "write_file",
+    {
+      title: "Write file",
+      description:
+        "Create or overwrite a UTF-8 text file in the workspace. Pass if_version (from a prior " +
+        "read_file, write_file, or str_replace call) to reject the write if the file changed since.",
+      inputSchema: {
+        path: z
+          .string()
+          .min(1)
+          .describe("File to write, relative to the workspace root."),
+        content: z.string().describe("Full file content to write."),
+        if_version: z
+          .string()
+          .optional()
+          .describe(
+            "Version from a prior read — rejects the write if the file changed since.",
+          ),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        openWorldHint: false,
+      },
+    },
+    ({ path, content, if_version }) =>
+      run(async () => {
+        const { version, bytes } = await writeTextFile(
+          path,
+          content,
+          if_version,
+        );
+        return `Wrote "${path}" (${bytes} bytes). [version: ${version}]`;
+      }),
+  );
+
+  server.registerTool(
+    "str_replace",
+    {
+      title: "Replace text in file",
+      description:
+        "Replace text in a workspace file that must match exactly once. Fails if old_str is " +
+        "missing or appears more than once. Pass if_version to guard against a stale edit.",
+      inputSchema: {
+        path: z
+          .string()
+          .min(1)
+          .describe("File to edit, relative to the workspace root."),
+        old_str: z
+          .string()
+          .min(1)
+          .describe(
+            "Exact text to replace; must occur exactly once in the file.",
+          ),
+        new_str: z.string().describe("Replacement text."),
+        if_version: z
+          .string()
+          .optional()
+          .describe(
+            "Version from a prior read — rejects the edit if the file changed since.",
+          ),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        openWorldHint: false,
+      },
+    },
+    ({ path, old_str, new_str, if_version }) =>
+      run(async () => {
+        const { version, bytes } = await strReplace(
+          path,
+          old_str,
+          new_str,
+          if_version,
+        );
+        return `Updated "${path}" (${bytes} bytes). [version: ${version}]`;
+      }),
+  );
+
+  server.registerTool(
+    "delete_file",
+    {
+      title: "Delete file",
+      description:
+        "Delete a single file in the workspace. Directories (and symlinks to directories) are refused.",
+      inputSchema: {
+        path: z
+          .string()
+          .min(1)
+          .describe("File to delete, relative to the workspace root."),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        openWorldHint: false,
+      },
+    },
+    ({ path }) =>
+      run(async () => {
+        await deleteFile(path);
+        return `Deleted "${path}".`;
       }),
   );
 }
