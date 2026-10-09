@@ -30,7 +30,7 @@ export async function searchCode(opts: SearchOptions): Promise<SearchResult> {
       "-I",
       "--no-color",
       "--untracked",
-      "--exclude-standard",
+      "--no-exclude-standard",
       ...(opts.ignoreCase ? ["-i"] : []),
       opts.regex ? "-E" : "-F",
       "-e",
@@ -38,7 +38,7 @@ export async function searchCode(opts: SearchOptions): Promise<SearchResult> {
       "--",
       rel === "" ? "." : rel,
     ],
-    { okExitCodes: [0, 1] }, // exit 1 means "no matches"
+    { okExitCodes: [0, 1] },
   );
 
   const matches = stdout
