@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { gitDiff, gitLog, gitStatus } from "../services/git.service.js";
+import { commitChanges, gitDiff, gitLog, gitStatus } from "../services/git.service.js";
 import { run, truncate } from "./result.tool.js";
 
 const MAX_DIFF_CHARS = 30_000;
@@ -76,6 +76,38 @@ export function registerGitTools(server: McpServer): void {
           ...(path !== undefined ? { path } : {}),
         });
         return log === "" ? "No commits." : log;
+      }),
+  );
+
+  server.registerTool(
+    "git_commit",
+    {
+      title: "Commit changes",
+      description:
+        "Commit changes in the workspace's git repo. If paths are given, only those paths are " +
+        "staged and committed; otherwise every currently changed file is staged and committed.",
+      inputSchema: {
+        message: z.string().min(1).max(500).describe("Commit message."),
+        paths: z
+          .array(z.string().min(1))
+          .optional()
+          .describe(
+            "Specific files/directories to stage and commit. Omit to commit all changes.",
+          ),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
+    },
+    ({ message, paths }) =>
+      run(async () => {
+        const { commitHash, filesChanged } = await commitChanges({
+          message,
+          ...(paths !== undefined ? { paths } : {}),
+        });
+        return `Committed ${filesChanged} file(s) as ${commitHash}: "${message}"`;
       }),
   );
 }

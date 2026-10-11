@@ -1,146 +1,125 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { gitStatus, gitDiff, gitLog, runGit } from "../../src/services/git.service.js";
-import { ToolError } from "../../src/errors.js";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { promises as fs } from "node:fs";
+import * as fsSync from "node:fs";
+import { execFileSync } from "node:child_process";
+import * as path from "node:path";
+import * as os from "node:os";
 
-const execFileAsync = promisify(execFile);
+const WORKSPACE = fsSync.mkdtempSync(path.join(os.tmpdir(), "mcp-git-test-"));
+process.env.WORKSPACE_ROOT = WORKSPACE;
 
-describe("git.service", () => {
-  let isGitRepo = false;
+afterAll(async () => {
+  await fs.rm(WORKSPACE, { recursive: true, force: true });
+});
 
-  beforeAll(async () => {
-    try {
-      await execFileAsync("git", ["rev-parse", "--git-dir"], {
-        cwd: process.env.WORKSPACE_ROOT,
-      });
-      isGitRepo = true;
-    } catch {
-      isGitRepo = false;
-    }
+const { commitChanges, gitStatus, gitDiff, gitLog } =
+  await import("../../src/services/git.service.js");
+const { ROOT } = await import("../../src/sandbox.js");
+
+function rawGit(...args: string[]) {
+  return execFileSync("git", args, {
+    cwd: ROOT,
+    stdio: ["ignore", "pipe", "ignore"],
+  }).toString();
+}
+
+beforeEach(async () => {
+  await fs.rm(path.join(ROOT, ".git"), { recursive: true, force: true });
+  for (const e of await fs.readdir(ROOT)) {
+    await fs.rm(path.join(ROOT, e), { recursive: true, force: true });
+  }
+  rawGit("init");
+});
+
+describe("commitChanges", () => {
+  it("commits a specific path and leaves others untouched", async () => {
+    await fs.writeFile(path.join(ROOT, "a.txt"), "a");
+    await fs.writeFile(path.join(ROOT, "b.txt"), "b");
+    const result = await commitChanges({ message: "add a", paths: ["a.txt"] });
+    expect(result.filesChanged).toBe(1);
+    expect(result.commitHash).toMatch(/^[0-9a-f]{7,}$/);
+    const tracked = rawGit("ls-files");
+    expect(tracked).toContain("a.txt");
+    expect(tracked).not.toContain("b.txt");
   });
 
-  describe("runGit", () => {
-    it("should execute git command and return stdout", async () => {
-      if (!isGitRepo) {
-        console.log("Skipping test - not a git repository");
-        return;
-      }
-
-      const result = await runGit(["--version"]);
-      expect(result).toContain("git version");
-    });
-
-    it("should handle non-zero exit codes with okExitCodes", async () => {
-      if (!isGitRepo) {
-        console.log("Skipping test - not a git repository");
-        return;
-      }
-
-      // git grep with no matches exits with code 1
-      const result = await runGit(
-        ["grep", "-n", "NONEXISTENT_PATTERN_XYZ123"],
-        { okExitCodes: [0, 1] },
-      );
-      expect(result).toBe("");
-    });
-
-    it("should throw ToolError for git command failures", async () => {
-      await expect(
-        runGit(["invalid-command-xyz"]),
-      ).rejects.toThrow(ToolError);
-    });
+  it("commits everything when no paths given", async () => {
+    await fs.writeFile(path.join(ROOT, "x.txt"), "x");
+    await fs.writeFile(path.join(ROOT, "y.txt"), "y");
+    const result = await commitChanges({ message: "add both" });
+    expect(result.filesChanged).toBe(2);
   });
 
-  describe("gitStatus", () => {
-    it("should return git status output", async () => {
-      if (!isGitRepo) {
-        console.log("Skipping test - not a git repository");
-        return;
-      }
-
-      const result = await gitStatus();
-      expect(typeof result).toBe("string");
-      // Should start with branch info
-      if (result.trim()) {
-        expect(result).toMatch(/^##/);
-      }
-    });
-
-    it("should filter out blocked files", async () => {
-      if (!isGitRepo) {
-        console.log("Skipping test - not a git repository");
-        return;
-      }
-
-      const result = await gitStatus();
-      // .env files should not appear in status
-      expect(result).not.toContain(".env");
+  it("rejects an empty message", async () => {
+    await fs.writeFile(path.join(ROOT, "z.txt"), "z");
+    await expect(commitChanges({ message: "   " })).rejects.toMatchObject({
+      code: "INVALID_INPUT",
     });
   });
 
-  describe("gitDiff", () => {
-    it("should return unstaged diff", async () => {
-      if (!isGitRepo) {
-        console.log("Skipping test - not a git repository");
-        return;
-      }
-
-      const result = await gitDiff({ staged: false });
-      expect(typeof result).toBe("string");
-    });
-
-    it("should return staged diff", async () => {
-      if (!isGitRepo) {
-        console.log("Skipping test - not a git repository");
-        return;
-      }
-
-      const result = await gitDiff({ staged: true });
-      expect(typeof result).toBe("string");
-    });
-
-    it("should handle path parameter", async () => {
-      if (!isGitRepo) {
-        console.log("Skipping test - not a git repository");
-        return;
-      }
-
-      const result = await gitDiff({ path: ".", staged: false });
-      expect(typeof result).toBe("string");
-    });
+  it("rejects when there's nothing to commit", async () => {
+    await expect(
+      commitChanges({ message: "nothing here" }),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
   });
 
-  describe("gitLog", () => {
-    it("should return commit history", async () => {
-      if (!isGitRepo) {
-        console.log("Skipping test - not a git repository");
-        return;
-      }
+  it("rejects staging a blocked path", async () => {
+    await fs.writeFile(path.join(ROOT, ".env"), "SECRET=1");
+    await expect(
+      commitChanges({ message: "sneak secret", paths: [".env"] }),
+    ).rejects.toMatchObject({ code: "BLOCKED_PATH" });
+  });
 
-      const result = await gitLog({ maxCount: 5 });
-      expect(typeof result).toBe("string");
-    });
+  it("rejects a path escape", async () => {
+    await expect(
+      commitChanges({ message: "escape", paths: ["../outside.txt"] }),
+    ).rejects.toMatchObject({ code: "OUTSIDE_WORKSPACE" });
+  });
+});
 
-    it("should respect maxCount parameter", async () => {
-      if (!isGitRepo) {
-        console.log("Skipping test - not a git repository");
-        return;
-      }
+describe("commitChanges + gitStatus/gitDiff/gitLog together", () => {
+  it("status is clean after commit, diff is empty, log shows the commit", async () => {
+    await fs.writeFile(path.join(ROOT, "f.txt"), "v1");
+    const { commitHash } = await commitChanges({ message: "first" });
 
-      const result = await gitLog({ maxCount: 1 });
-      const lines = result.trim().split("\n").filter(Boolean);
-      expect(lines.length).toBeLessThanOrEqual(1);
-    });
+    const statusAfter = await gitStatus();
+    expect(
+      statusAfter
+        .trim()
+        .split("\n")
+        .filter((l: string) => !l.startsWith("##")),
+    ).toEqual([]);
 
-    it("should handle path parameter", async () => {
-      if (!isGitRepo) {
-        console.log("Skipping test - not a git repository");
-        return;
-      }
+    expect((await gitDiff({})).trim()).toBe("");
 
-      const result = await gitLog({ maxCount: 10, path: "." });
-      expect(typeof result).toBe("string");
-    });
+    const log = await gitLog({ maxCount: 5 });
+    expect(log).toContain(commitHash);
+    expect(log).toContain("first");
+  });
+
+  it("shows an uncommitted change in both status and diff, then clears after commit", async () => {
+    await fs.writeFile(path.join(ROOT, "f.txt"), "v1");
+    await commitChanges({ message: "first" });
+
+    await fs.writeFile(path.join(ROOT, "f.txt"), "v2");
+    expect(await gitStatus()).toContain("f.txt");
+
+    const diffMid = await gitDiff({});
+    expect(diffMid).toContain("-v1");
+    expect(diffMid).toContain("+v2");
+
+    await commitChanges({ message: "second" });
+    const statusAfter = await gitStatus();
+    expect(
+      statusAfter
+        .trim()
+        .split("\n")
+        .filter((l: string) => !l.startsWith("##")),
+    ).toEqual([]);
+  });
+
+  it("gitStatus hides a blocked file's name even though it's untracked", async () => {
+    await fs.writeFile(path.join(ROOT, ".env"), "SECRET=1");
+    expect(await gitStatus()).not.toContain(".env");
   });
 });

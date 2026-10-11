@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { ROOT } from "./sandbox.js";
+import { GIT_IDENTITY_ARGS } from "./services/git.service.js";
 
 const TEMPLATES: Record<string, string> = {
   "PROJECT_STATE.md": `# Project State
@@ -71,19 +72,11 @@ export const HANDOFF_FILE_NAMES = Object.keys(TEMPLATES);
 function ensureGitRepo(): void {
   if (fs.existsSync(path.join(ROOT, ".git"))) return;
   const git = (...args: string[]) =>
-    execFileSync(
-      "git",
-      [
-        "-c",
-        "user.name=mcp-file-server",
-        "-c",
-        "user.email=mcp-file-server@localhost",
-        "-c",
-        "commit.gpgsign=false",
-        ...args,
-      ],
-      { cwd: ROOT, stdio: "ignore", timeout: 15_000 },
-    );
+    execFileSync("git", [...GIT_IDENTITY_ARGS, ...args], {
+      cwd: ROOT,
+      stdio: "ignore",
+      timeout: 15_000,
+    });
   try {
     git("init");
     git("add", "--", ...HANDOFF_FILE_NAMES);

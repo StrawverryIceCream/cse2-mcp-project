@@ -72,7 +72,9 @@ if (args.includes("--coverage") || args.includes("-c")) {
   options.coverage = true;
 }
 
-const patternIndex = args.findIndex((arg) => arg === "--pattern" || arg === "-p");
+const patternIndex = args.findIndex(
+  (arg) => arg === "--pattern" || arg === "-p",
+);
 if (patternIndex !== -1 && args[patternIndex + 1]) {
   options.pattern = args[patternIndex + 1];
 }

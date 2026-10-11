@@ -12,10 +12,7 @@ import {
 import { ToolError } from "../../src/errors.js";
 
 describe("files.service", () => {
-  const testDir = path.join(
-    process.env.WORKSPACE_ROOT!,
-    "test-files-service",
-  );
+  const testDir = path.join(process.env.WORKSPACE_ROOT!, "test-files-service");
 
   beforeEach(async () => {
     await fsp.mkdir(testDir, { recursive: true });
@@ -68,7 +65,9 @@ describe("files.service", () => {
 
     it("should throw NOT_FOUND for non-existent directory", async () => {
       await expect(listDirectory("nonexistent")).rejects.toThrow(ToolError);
-      await expect(listDirectory("nonexistent")).rejects.toThrow("does not exist");
+      await expect(listDirectory("nonexistent")).rejects.toThrow(
+        "does not exist",
+      );
     });
 
     it("should throw NOT_A_DIRECTORY for files", async () => {
@@ -264,7 +263,10 @@ describe("files.service", () => {
 
     it("should handle empty replacement", async () => {
       const relPath = "test-files-service/empty-replace.txt";
-      await fsp.writeFile(path.join(testDir, "empty-replace.txt"), "Hello X World");
+      await fsp.writeFile(
+        path.join(testDir, "empty-replace.txt"),
+        "Hello X World",
+      );
 
       await strReplace(relPath, " X", "");
 

@@ -23,18 +23,14 @@ function main(): void {
   console.log("Running MCP project tests...");
   console.log(`Arguments: ${args.join(" ") || "(none)"}`);
 
-  const result = spawnSync(
-    "npx",
-    ["vitest", ...testArgs],
-    {
-      stdio: "inherit",
-      cwd: path.join(__dirname, ".."),
-      env: {
-        ...process.env,
-        NODE_OPTIONS: "--experimental-vm-modules",
-      },
+  const result = spawnSync("npx", ["vitest", ...testArgs], {
+    stdio: "inherit",
+    cwd: path.join(__dirname, ".."),
+    env: {
+      ...process.env,
+      NODE_OPTIONS: "--experimental-vm-modules",
     },
-  );
+  });
 
   process.exit(result.status ?? 1);
 }

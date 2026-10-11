@@ -161,10 +161,7 @@ describe("search.service", () => {
       }
 
       await fsp.mkdir(path.join(testDir, "subdir"), { recursive: true });
-      await fsp.writeFile(
-        path.join(testDir, "root.txt"),
-        "pattern in root",
-      );
+      await fsp.writeFile(path.join(testDir, "root.txt"), "pattern in root");
       await fsp.writeFile(
         path.join(testDir, "subdir", "nested.txt"),
         "pattern in subdir",

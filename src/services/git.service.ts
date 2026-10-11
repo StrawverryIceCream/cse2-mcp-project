@@ -120,3 +120,54 @@ export async function gitLog(opts: {
     ...(await pathspec(opts.path)),
   ]);
 }
+
+/**
+ * Same identity config handoff.ts's ensureGitRepo() uses when it seeds the
+ * repo — export it here so commitChanges() doesn't duplicate it, and have
+ * handoff.ts import this instead of its own inline copy (see below).
+ */
+export const GIT_IDENTITY_ARGS = [
+  "-c", "user.name=mcp-file-server",
+  "-c", "user.email=mcp-file-server@localhost",
+  "-c", "commit.gpgsign=false",
+];
+
+export interface CommitInput {
+  message: string;
+  /** Specific files/dirs to stage and commit. Omit to stage all current changes. */
+  paths?: string[];
+}
+
+export interface CommitResult {
+  commitHash: string;
+  filesChanged: number;
+}
+
+export async function commitChanges(input: CommitInput): Promise<CommitResult> {
+  if (!input.message.trim()) {
+    throw new ToolError("INVALID_INPUT", "Commit message cannot be empty.");
+  }
+
+  if (input.paths?.length) {
+    // Reuse resolveSafe/toRelative so a commit can't be used to sneak a
+    // write/stage operation outside the workspace or onto a blocked path —
+    // same sandbox guarantee every other tool here gets.
+    const relPaths = await Promise.all(
+      input.paths.map(async (p) => toRelative(await resolveSafe(p))),
+    );
+    await runGit(["add", "--", ...relPaths]);
+  } else {
+    await runGit(["add", "-A"]);
+  }
+
+  const staged = await runGit(["diff", "--cached", "--name-only"]);
+  const changedFiles = staged.split("\n").filter(Boolean);
+  if (changedFiles.length === 0) {
+    throw new ToolError("INVALID_INPUT", "Nothing to commit — no staged changes.");
+  }
+
+  await runGit([...GIT_IDENTITY_ARGS, "commit", "-m", input.message]);
+  const hash = (await runGit(["rev-parse", "--short", "HEAD"])).trim();
+
+  return { commitHash: hash, filesChanged: changedFiles.length };
+}
