@@ -50,6 +50,7 @@ const methodNotAllowed = (_req: express.Request, res: express.Response) => {
     id: null,
   });
 };
+
 app.get("/mcp", requireAuth, methodNotAllowed);
 app.delete("/mcp", requireAuth, methodNotAllowed);
 
