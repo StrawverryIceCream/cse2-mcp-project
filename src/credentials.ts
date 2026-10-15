@@ -1,44 +1,30 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 
-export interface Secrets {
-  authToken: string;
-  connectorKey?: string | undefined;
-}
-
 /** Compares two secrets in constant time. Hashing first hides the length of the real secret. */
 export function safeEqual(a: string, b: string): boolean {
   const digest = (value: string) => createHash("sha256").update(value).digest();
   return timingSafeEqual(digest(a), digest(b));
 }
 
-function bearerToken(req: Request): string | undefined {
-  const header = req.headers.authorization;
-  return header === undefined
-    ? undefined
-    : /^Bearer\s+(.+)$/i.exec(header)?.[1];
+/** Every key the client presented: the Bearer header and/or the ?key= URL param. */
+function presentedKeys(req: Request): string[] {
+  const keys: string[] = [];
+  const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? "")?.[1];
+  if (bearer !== undefined) keys.push(bearer);
+  const query: unknown = req.query["key"];
+  if (typeof query === "string") keys.push(query);
+  return keys;
 }
 
-function urlKey(req: Request): string | undefined {
-  const key: unknown = req.query["key"];
-  return typeof key === "string" ? key : undefined;
-}
-
-export function createRequireAuth(secrets: Secrets) {
-  const { authToken, connectorKey } = secrets;
-
+/** One secret, accepted from either the header or the URL, so every client uses the same key. */
+export function createRequireAuth(secret: string) {
   return function requireAuth(
     req: Request,
     res: Response,
     next: NextFunction,
   ): void {
-    const token = bearerToken(req);
-    if (token !== undefined && safeEqual(token, authToken)) return next();
-
-    const key = urlKey(req);
-    if (connectorKey && key !== undefined && safeEqual(key, connectorKey))
-      return next();
-
+    if (presentedKeys(req).some((key) => safeEqual(key, secret))) return next();
     res.status(401).json({ error: "Unauthorized" });
   };
 }

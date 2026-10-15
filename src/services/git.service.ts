@@ -23,6 +23,8 @@ type ExecError = Error & {
 interface GitOptions {
   /** Exit codes that are not failures (git grep exits 1 when nothing matches). */
   okExitCodes?: number[];
+  /** Disable literal pathspecs only when the caller supplies explicit pathspec magic. */
+  literalPathspecs?: boolean;
 }
 
 /**
@@ -47,7 +49,7 @@ export async function runGit(
           ...process.env,
           GIT_TERMINAL_PROMPT: "0",
           GIT_OPTIONAL_LOCKS: "0",
-          GIT_LITERAL_PATHSPECS: "1",
+          GIT_LITERAL_PATHSPECS: opts.literalPathspecs === false ? "0" : "1",
         },
       },
     );
@@ -98,14 +100,36 @@ export async function gitDiff(opts: {
   path?: string;
   staged?: boolean;
 }): Promise<string> {
-  return runGit([
+  const diffArgs = [
     "diff",
     "--no-color",
     "--no-ext-diff",
     "--no-textconv",
     ...(opts.staged ? ["--staged"] : []),
-    ...(await pathspec(opts.path)),
-  ]);
+  ];
+  const changedPaths = (
+    await runGit([...diffArgs, "--name-only", "-z", "--no-renames"])
+  )
+    .split("\0")
+    .filter((rel) => rel && isBlockedRelative(rel));
+  const rel = opts.path
+    ? toRelative(await resolveSafe(opts.path))
+    : "";
+  const includedPath = rel ? `:(literal)${rel}` : ".";
+  const excludePathspecs = changedPaths.map(
+    (blockedPath) => `:(exclude,literal)${blockedPath}`,
+  );
+
+  return runGit(
+    [
+      ...diffArgs,
+      "--no-renames",
+      "--",
+      includedPath,
+      ...excludePathspecs,
+    ],
+    { literalPathspecs: false },
+  );
 }
 
 export async function gitLog(opts: {

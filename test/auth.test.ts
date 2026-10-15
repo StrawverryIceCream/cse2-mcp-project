@@ -2,12 +2,16 @@ import type { Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 import { createRequireAuth, safeEqual } from "../src/credentials.js";
 
-const TOKEN = "header-token-for-tests";
 const KEY = "k".repeat(40);
 
-function makeReq(opts: { authorization?: string; query?: Record<string, unknown> } = {}): Request {
+function makeReq(
+  opts: { authorization?: string; query?: Record<string, unknown> } = {},
+): Request {
   return {
-    headers: opts.authorization === undefined ? {} : { authorization: opts.authorization },
+    headers:
+      opts.authorization === undefined
+        ? {}
+        : { authorization: opts.authorization },
     query: opts.query ?? {},
   } as unknown as Request;
 }
@@ -28,13 +32,10 @@ function makeRes() {
   return res;
 }
 
-function attempt(
-  secrets: { authToken: string; connectorKey?: string | undefined },
-  req: Request,
-) {
+function attempt(req: Request) {
   const res = makeRes();
   const next = vi.fn();
-  createRequireAuth(secrets)(req, res as unknown as Response, next);
+  createRequireAuth(KEY)(req, res as unknown as Response, next);
   return { res, allowed: next.mock.calls.length === 1 };
 }
 
@@ -52,25 +53,26 @@ describe("safeEqual", () => {
 });
 
 describe("bearer header", () => {
-  const secrets = { authToken: TOKEN };
-
-  it("allows the correct token", () => {
-    expect(attempt(secrets, makeReq({ authorization: `Bearer ${TOKEN}` })).allowed).toBe(true);
+  it("allows the correct key", () => {
+    expect(attempt(makeReq({ authorization: `Bearer ${KEY}` })).allowed).toBe(
+      true,
+    );
   });
 
   it("accepts the scheme in any letter case", () => {
-    expect(attempt(secrets, makeReq({ authorization: `bearer ${TOKEN}` })).allowed).toBe(true);
+    expect(attempt(makeReq({ authorization: `bearer ${KEY}` })).allowed).toBe(
+      true,
+    );
   });
 
   it.each([
     ["no header", undefined],
-    ["wrong token", "Bearer wrong"],
-    ["wrong scheme", `Basic ${TOKEN}`],
-    ["scheme with no token", "Bearer "],
-    ["token only", TOKEN],
+    ["wrong key", "Bearer wrong"],
+    ["wrong scheme", `Basic ${KEY}`],
+    ["scheme with no key", "Bearer "],
+    ["key only", KEY],
   ])("rejects %s with 401", (_name, authorization) => {
     const { res, allowed } = attempt(
-      secrets,
       makeReq(authorization === undefined ? {} : { authorization }),
     );
     expect(allowed).toBe(false);
@@ -79,15 +81,9 @@ describe("bearer header", () => {
   });
 });
 
-describe("connector key in the URL", () => {
-  const secrets = { authToken: TOKEN, connectorKey: KEY };
-
+describe("key in the URL", () => {
   it("allows the correct key", () => {
-    expect(attempt(secrets, makeReq({ query: { key: KEY } })).allowed).toBe(true);
-  });
-
-  it("still allows the header token when a key is configured", () => {
-    expect(attempt(secrets, makeReq({ authorization: `Bearer ${TOKEN}` })).allowed).toBe(true);
+    expect(attempt(makeReq({ query: { key: KEY } })).allowed).toBe(true);
   });
 
   it.each([
@@ -96,27 +92,39 @@ describe("connector key in the URL", () => {
     ["empty key", { key: "" }],
     ["repeated key (array)", { key: [KEY, KEY] }],
     ["key as object", { key: { a: KEY } }],
-    ["the header token used as a key", { key: TOKEN }],
     ["a different parameter name", { token: KEY }],
   ])("rejects %s with 401", (_name, query) => {
-    const { res, allowed } = attempt(secrets, makeReq({ query }));
+    const { res, allowed } = attempt(makeReq({ query }));
     expect(allowed).toBe(false);
     expect(res.statusCode).toBe(401);
   });
-
-  it("does not echo any secret in the error body", () => {
-    const { res } = attempt(secrets, makeReq({ query: { key: "nope" } }));
-    expect(JSON.stringify(res.body)).not.toContain(KEY);
-    expect(JSON.stringify(res.body)).not.toContain(TOKEN);
-  });
 });
 
-describe("connector key disabled", () => {
-  it.each([
-    ["undefined", undefined],
-    ["empty string", ""],
-  ])("ignores ?key= when the key is %s", (_name, connectorKey) => {
-    expect(attempt({ authToken: TOKEN, connectorKey }, makeReq({ query: { key: "" } })).allowed).toBe(false);
-    expect(attempt({ authToken: TOKEN, connectorKey }, makeReq({ query: { key: "anything" } })).allowed).toBe(false);
+describe("both sources together", () => {
+  it("allows a correct URL key even if the bearer header is wrong", () => {
+    expect(
+      attempt(makeReq({ authorization: "Bearer stale", query: { key: KEY } }))
+        .allowed,
+    ).toBe(true);
+  });
+
+  it("allows a correct bearer header even if the URL key is wrong", () => {
+    expect(
+      attempt(
+        makeReq({ authorization: `Bearer ${KEY}`, query: { key: "stale" } }),
+      ).allowed,
+    ).toBe(true);
+  });
+
+  it("rejects when both are wrong", () => {
+    expect(
+      attempt(makeReq({ authorization: "Bearer a", query: { key: "b" } }))
+        .allowed,
+    ).toBe(false);
+  });
+
+  it("does not echo the secret in the error body", () => {
+    const { res } = attempt(makeReq({ query: { key: "nope" } }));
+    expect(JSON.stringify(res.body)).not.toContain(KEY);
   });
 });

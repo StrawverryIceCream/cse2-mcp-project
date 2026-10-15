@@ -122,4 +122,30 @@ describe("commitChanges + gitStatus/gitDiff/gitLog together", () => {
     await fs.writeFile(path.join(ROOT, ".env"), "SECRET=1");
     expect(await gitStatus()).not.toContain(".env");
   });
+
+  it("gitDiff hides blocked tracked changes while showing allowed changes", async () => {
+    await fs.mkdir(path.join(ROOT, "config"), { recursive: true });
+    await fs.writeFile(path.join(ROOT, ".env"), "SECRET=old");
+    await fs.writeFile(path.join(ROOT, "config", "settings.txt"), "safe=old");
+    rawGit("add", "-f", ".env", "config/settings.txt");
+    rawGit(
+      "-c",
+      "user.name=test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "-m",
+      "initial",
+    );
+
+    await fs.writeFile(path.join(ROOT, ".env"), "SECRET=new");
+    await fs.writeFile(path.join(ROOT, "config", "settings.txt"), "safe=new");
+
+    const diff = await gitDiff({});
+    expect(diff).toContain("settings.txt");
+    expect(diff).toContain("-safe=old");
+    expect(diff).toContain("+safe=new");
+    expect(diff).not.toContain(".env");
+    expect(diff).not.toContain("SECRET");
+  });
 });
